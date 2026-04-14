@@ -8,8 +8,9 @@
     "node": ">=22"
   },
   "scripts": {
-    "setup": "node scripts/setup.mjs",
-    "dev": "openclaw gateway"
+    "start": "node server.mjs",
+    "dev": "node --env-file=.env server.mjs",
+    "setup": "node scripts/setup.mjs"
   },
   "dependencies": {
     "mongodb": "^6.16.0",
