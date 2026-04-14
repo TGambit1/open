@@ -13,8 +13,7 @@
     "setup": "node scripts/setup.mjs"
   },
   "dependencies": {
-    "mongodb": "^6.16.0",
-    "openclaw": "latest"
+    "mongodb": "^6.16.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
