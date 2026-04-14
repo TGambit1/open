@@ -1,0 +1,27 @@
+{
+  "name": "home",
+  "version": "0.1.0",
+  "description": "Don't Stress, get home — household and couples life admin, over text.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "openclaw gateway"
+  },
+  "dependencies": {
+    "mongodb": "^6.16.0",
+    "openclaw": "latest"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  },
+  "openclaw": {
+    "product": "home",
+    "workspace": "./workspace",
+    "extensions": ["./extensions/linq"]
+  }
+}

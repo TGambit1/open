@@ -1,0 +1,12 @@
+{
+  "id": "linq",
+  "channels": ["linq"],
+  "channelEnvVars": {
+    "linq": ["LINQ_API_TOKEN", "LINQ_WEBHOOK_SECRET"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

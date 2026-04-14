@@ -1,0 +1,17 @@
+{
+  "name": "@home/linq",
+  "version": "0.1.0",
+  "description": "Linq channel plugin for Home — iMessage, RCS, SMS, and MMS via the Linq API",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./api": "./api.js",
+    "./runtime-api": "./runtime-api.js",
+    "./contract-api": "./contract-api.js"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  }
+}
