@@ -2,7 +2,7 @@
 /**
  * Home server
  * - GET  /           → landing page
- * - POST /webhooks/linq → Linq inbound message handler
+ * - POST /webhooks/linq → Linq inbound message handler (with AI response)
  * - GET  /health     → Railway health check
  */
 
@@ -12,6 +12,7 @@ import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MongoClient, ObjectId } from "mongodb";
 import { createHmac } from "node:crypto";
+import { respond } from "./lib/agent/respond.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -44,6 +45,29 @@ async function getDb() {
   }
   console.log("✓ MongoDB connected");
   return db;
+}
+
+// ── Linq API — send a message ──────────────────────────────────────────────
+
+async function linqSend({ chatId, text }) {
+  const token = process.env.LINQ_API_TOKEN;
+  if (!token) throw new Error("LINQ_API_TOKEN is not set");
+
+  const res = await fetch("https://api.linqapp.com/v1/messages", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ chatId, text }),
+  });
+
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(`Linq send failed ${res.status}: ${JSON.stringify(json)}`);
+  }
+  return json;
 }
 
 // ── Static landing page ────────────────────────────────────────────────────
@@ -159,42 +183,81 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (event?.type === "message.received" && event.message) {
-      const msg = event.message;
-      try {
-        const database = await getDb();
-        const household = await database.collection("households").findOne({
-          "linq.fromNumber": process.env.LINQ_FROM_NUMBER,
-        });
-        const householdId = household?._id ?? new ObjectId();
-
-        await database.collection("messages").updateOne(
-          { linqMessageId: msg.id },
-          {
-            $setOnInsert: {
-              householdId,
-              linqMessageId: msg.id,
-              chatId: msg.chatId,
-              direction: "inbound",
-              from: msg.from,
-              text: msg.text ?? null,
-              attachmentUrl: msg.attachmentUrl ?? null,
-              protocol: msg.protocol,
-              replyToMessageId: msg.replyToMessageId ?? null,
-              sentAt: new Date(msg.sentAt),
-              createdAt: new Date(),
-            },
-          },
-          { upsert: true },
-        );
-        console.log(`[linq] inbound from ${msg.from}: ${msg.text ?? "(attachment)"}`);
-      } catch (err) {
-        console.error("[linq] failed to persist message:", err);
-      }
-    }
-
+    // Acknowledge Linq immediately — processing happens async so we don't time out
     res.writeHead(200);
     res.end();
+
+    if (event?.type === "message.received" && event.message) {
+      const msg = event.message;
+
+      // Don't reply to our own outbound messages echoed back
+      if (msg.from === process.env.LINQ_FROM_NUMBER) return;
+
+      // Only respond to text messages
+      if (!msg.text) return;
+
+      setImmediate(async () => {
+        try {
+          const database = await getDb();
+          const household = await database.collection("households").findOne({
+            "linq.fromNumber": process.env.LINQ_FROM_NUMBER,
+          });
+          const householdId = household?._id ?? new ObjectId();
+
+          // 1. Save inbound message
+          await database.collection("messages").updateOne(
+            { linqMessageId: msg.id },
+            {
+              $setOnInsert: {
+                householdId,
+                linqMessageId: msg.id,
+                chatId: msg.chatId,
+                direction: "inbound",
+                from: msg.from,
+                text: msg.text ?? null,
+                attachmentUrl: msg.attachmentUrl ?? null,
+                protocol: msg.protocol,
+                replyToMessageId: msg.replyToMessageId ?? null,
+                sentAt: new Date(msg.sentAt),
+                createdAt: new Date(),
+              },
+            },
+            { upsert: true },
+          );
+          console.log(`[linq] inbound from ${msg.from}: ${msg.text}`);
+
+          // 2. Generate AI response
+          const replyText = await respond({
+            text: msg.text,
+            chatId: msg.chatId,
+            fromNumber: msg.from,
+            db: database,
+          });
+          console.log(`[linq] reply to ${msg.chatId}: ${replyText.slice(0, 80)}…`);
+
+          // 3. Send reply via Linq
+          const sent = await linqSend({ chatId: msg.chatId, text: replyText });
+
+          // 4. Save outbound message
+          await database.collection("messages").insertOne({
+            householdId,
+            linqMessageId: sent?.id ?? null,
+            chatId: msg.chatId,
+            direction: "outbound",
+            from: process.env.LINQ_FROM_NUMBER ?? null,
+            text: replyText,
+            attachmentUrl: null,
+            protocol: msg.protocol,
+            replyToMessageId: msg.id,
+            sentAt: new Date(),
+            createdAt: new Date(),
+          });
+        } catch (err) {
+          console.error("[linq] response error:", err);
+        }
+      });
+    }
+
     return;
   }
 
